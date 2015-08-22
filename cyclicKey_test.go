@@ -1,4 +1,4 @@
-package crypto
+package cyclicKey
 
 import (
 	"bytes"
@@ -22,32 +22,32 @@ func TestKeyGeneration(t *testing.T) {
 	}
 }
 
-func TestFastCycle(t *testing.T) {
+func TestCycle(t *testing.T) {
 	m := make([]byte, 100000) //needs to be large enough to cascade through a few key cycles
 	rand.Read(m)
 	c := m
 	keys := GenerateKeyset(2)
-	for i := 0; i < len(keys)-1; i++ {
-		c = Enc(c, keys[i], false)
-		if bytes.Equal(m, c) {
-			t.Error("State repetition")
-		}
+	for i := 0; i < len(keys); i++ {
+		c = Cipher(c, keys[i], i == len(keys)-1)
 	}
-	c = Enc(c, keys[len(keys)-1], true)
 	if !bytes.Equal(m, c) {
 		t.Error("Did not cycle")
 	}
 }
 
 func TestInv(t *testing.T) {
-	if (pInv(111)*111)%p != 1 {
+	pInv(111)
+	i := uint32(invTbl[111-1]) + 1
+	if (i*111)%p != 1 {
 		t.Error("pInv error 1, got ")
-		t.Error(pInv(111))
+		t.Error(i)
 		t.Error(111)
 	}
-	if (pInv(54)*54)%p != 1 {
+	pInv(54)
+	i = uint32(invTbl[54-1]) + 1
+	if (i*54)%p != 1 {
 		t.Error("pInv error 2, got")
-		t.Error(pInv(54))
+		t.Error(i)
 		t.Error(54)
 	}
 }
@@ -62,9 +62,9 @@ func BenchmarkCycle(b *testing.B) {
 		c := m
 		keys := GenerateKeyset(4)
 		for i := 0; i < len(keys)-1; i++ {
-			c = Enc(c, keys[i], false)
+			c = Cipher(c, keys[i], false)
 		}
-		c = Enc(c, keys[len(keys)-1], true)
+		c = Cipher(c, keys[len(keys)-1], true)
 	}
 }
 

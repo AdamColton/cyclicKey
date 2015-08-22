@@ -1,4 +1,4 @@
-package crypto
+package cyclicKey
 
 import (
 	"crypto/rand"
@@ -12,23 +12,16 @@ var invTbl [257]byte
 var pmTbl [32896]byte
 var loaded = false
 
+//loadTbl loads invTbl, pmTbl and loaded with their precomputed values
 func loadTbl() {
 	for i := uint32(1); i < p; i++ {
 		pInv(i)
 	}
-	// populate by root index first
-	// these are of the form
-	// pmTbl[(((lpr-1)/2)*(257))+ri] = byte(powMod(lpr,ri) - 1)
-	// which simplifies to
-	// pmTbl[257+ri] = byte(powMod(lpr,ri) - 1)
+	pmTbl[1] = byte(2)
 	for ri := uint32(1); ri < 257; ri += 2 {
-		pmTbl[257+ri] = byte(powMod(lpr, ri) - 1)
-	}
-	for ri := uint32(1); ri < 257; ri += 2 {
+		r := uint32(pmTbl[ri]) + 1 // these all get set in the first loop, except pmTbl[1]
 		for e := uint32(0); e < 257; e++ {
-			r := powMod(lpr, ri)
-			pm := powMod(r, e) - 1
-			pmTbl[(((ri-1)/2)*(257))+e] = byte(pm)
+			pmTbl[(((ri-1)/2)*(257))+e] = byte(powMod(r, e) - 1)
 		}
 	}
 	loaded = true
@@ -52,9 +45,11 @@ func powMod(b, e uint32) uint32 {
 	return pm
 }
 
-func pInv(ua uint32) uint32 {
-	if i := invTbl[ua-1]; i > 0 {
-		return uint32(i) + 1
+//pInv is only used to populate invTbl
+//it calculates the inverse of ua with respect to p
+func pInv(ua uint32) {
+	if invTbl[ua-1] > 0 {
+		return
 	}
 	a := int64(ua)
 	b := int64(p)
@@ -71,10 +66,13 @@ func pInv(ua uint32) uint32 {
 	}
 	invTbl[ua-1] = byte(x1 - 1)
 	invTbl[x1-1] = byte(ua - 1)
-	return uint32(x1)
 }
 
-func Enc(message, key []byte, invert bool) []byte {
+// Cipher is the encrypt/decrypt function.
+// It cannot be called either an encryption or decrypting function because
+// often the caller does not know what sort of action they are requesting,
+// and often one cipher text is being converted to another cipher text.
+func Cipher(message, key []byte, invert bool) []byte {
 	if !loaded {
 		loadTbl()
 	}
@@ -84,10 +82,10 @@ func Enc(message, key []byte, invert bool) []byte {
 	root := make([]uint32, l+1)
 	r, ri, re := uint32(lpr), uint32(1), l
 	for i := 0; i < l; i++ {
-		root[i], r, ri = r, uint32(pmTbl[257+ri])+1, ri+2
+		root[i], r, ri = r, uint32(pmTbl[ri])+1, ri+2
 		k32[i] = uint32(key[i]) + 1
 	}
-	root[re], r, ri = r, uint32(pmTbl[257+ri])+1, ri+2
+	root[re], r, ri = r, uint32(pmTbl[ri])+1, ri+2
 
 	l = len(message)
 	c := make([]byte, l)
@@ -110,7 +108,7 @@ func Enc(message, key []byte, invert bool) []byte {
 		if invert {
 			kp = uint32(invTbl[kp-1]) + 1
 		}
-		root[re], r, ri = r, uint32(pmTbl[257+ri])+1, ri+2
+		root[re], r, ri = r, uint32(pmTbl[ri])+1, ri+2
 		if ri > p-2 {
 			r, ri = uint32(lpr), uint32(3)
 			for j = 0; j < len(key); j++ {
@@ -128,8 +126,11 @@ func Enc(message, key []byte, invert bool) []byte {
 	return c
 }
 
+// Number of bytes in a single key
 var KeyLength = 10
 
+// Generates a set of keys. The size of the set is defined by keys.
+// The length of each key is defined by the package variable KeyLength.
 func GenerateKeyset(keys int) [][]byte {
 	keyset := make([][]byte, keys+1)
 	compoundKey := make([]uint32, KeyLength)
