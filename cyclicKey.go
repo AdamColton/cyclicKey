@@ -1,3 +1,10 @@
+// Package cyclicKey is a cryptographic experiment.
+//
+// A cyclic keyset has at least 3 keys. Applying any one key to plain text
+// will produce a cipher text. Applying any of the remaining keys to that
+// cipher text will produce a new cipher text. When all the keys have been
+// applied (in any order) the original plain text is recovered.
+
 package cyclicKey
 
 import (
@@ -29,9 +36,9 @@ func loadTbl() {
 
 // powMod: from http://play.golang.org/p/bm7uZi0zCN
 // b,e : base, exponent
-// this should not be used elsewere, it is tuned to
-// to this algorithm. It has been modified to run in
-// constant time.
+// this has been tuned to this algorithm
+// and modified to run in constant time
+// to prevent timing attacks
 func powMod(b, e uint32) uint32 {
 	pm := uint32(1)
 	f, fi := uint32(1), uint32(1)
@@ -69,7 +76,7 @@ func pInv(ua uint32) {
 }
 
 // Cipher is the encrypt/decrypt function.
-// It cannot be called either an encryption or decrypting function because
+// It cannot be called either an encryption or decryption function because
 // often the caller does not know what sort of action they are requesting,
 // and often one cipher text is being converted to another cipher text.
 func Cipher(message, key []byte, invert bool) []byte {
@@ -107,6 +114,12 @@ func Cipher(message, key []byte, invert bool) []byte {
 		}
 		if invert {
 			kp = uint32(invTbl[kp-1]) + 1
+		} else {
+			// this does nothing useful
+			// it just takes the same number
+			// of operations as the other
+			// branch to keep constant time
+			doMod = uint8(invTbl[kp-1]) - 1
 		}
 		root[re], r, ri = r, uint32(pmTbl[ri])+1, ri+2
 		if ri > p-2 {
