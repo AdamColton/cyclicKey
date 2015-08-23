@@ -85,12 +85,14 @@ func Cipher(message, key []byte, invert bool) []byte {
 	}
 	l := len(key)
 	k32 := make([]uint32, l)
-	keyCycle := make([]byte, l)
+	rot, adj := uint32(0), uint32(0)
+	stp := make([]uint32, l)
 	root := make([]uint32, l+1)
 	r, ri, re := uint32(lpr), uint32(1), l
 	for i := 0; i < l; i++ {
 		root[i], r, ri = r, uint32(pmTbl[ri])+1, ri+2
 		k32[i] = uint32(key[i]) + 1
+		stp[i] = (2*rot*(uint32(i)+1) + 1)
 	}
 	root[re], r, ri = r, uint32(pmTbl[ri])+1, ri+2
 
@@ -122,15 +124,23 @@ func Cipher(message, key []byte, invert bool) []byte {
 			doMod = uint8(invTbl[kp-1]) - 1
 		}
 		root[re], r, ri = r, uint32(pmTbl[ri])+1, ri+2
+		// do key rotation
 		if ri > p-2 {
 			r, ri = uint32(lpr), uint32(3)
-			for j = 0; j < len(key); j++ {
-				if keyCycle[j] < 255 {
-					k32[j] = (k32[j] * 3) % s
-					break
-				} else {
-					keyCycle[j] = 0
-					k32[j] = uint32(key[j]) + 1
+			rot += 1
+			if rot > 255 {
+				rot = 0
+				adj += 1
+				for j = 0; j < len(key)-1; j++ {
+					stp[j] = stp[j+1]
+				}
+				stp[j] = (2*adj*(uint32(j)+1) + 1)
+				for j = 0; j < len(key); j++ {
+					k32[j] = ((uint32(key[j]) + 1) * stp[j]) % s
+				}
+			} else {
+				for j = 0; j < len(key); j++ {
+					k32[j] = (k32[j] * stp[j]) % s
 				}
 			}
 		}

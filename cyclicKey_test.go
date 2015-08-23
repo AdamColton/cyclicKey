@@ -31,6 +31,8 @@ func TestCycle(t *testing.T) {
 		c = Cipher(c, keys[i], i == len(keys)-1)
 	}
 	if !bytes.Equal(m, c) {
+		t.Error(m[190:200])
+		t.Error(c[190:200])
 		t.Error("Did not cycle")
 	}
 }
