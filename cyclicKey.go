@@ -1,9 +1,9 @@
 // Package cyclicKey is a cryptographic experiment.
 //
-// A cyclic keyset has at least 3 keys. Applying any one key to plain text
-// will produce a cipher text. Applying any of the remaining keys to that
-// cipher text will produce a new cipher text. When all the keys have been
-// applied (in any order) the original plain text is recovered.
+// A cyclic keyset has at least 3 keys. Applying any one key to plain text will
+// produce a cipher text. Applying any of the remaining keys to that cipher text
+// will produce a new cipher text. When all the keys have been applied (in any
+// order) the original plain text is recovered.
 
 package cyclicKey
 
@@ -15,9 +15,18 @@ const p = uint32(257)
 const lpr = uint32(3)
 const s = p - 1
 
-var invTbl [257]byte
-var pmTbl [32896]byte
+var invTbl [257]byte  // modulus inversion table
+var pmTbl [32896]byte // power modulus table
 var loaded = false
+
+// LoadTbl allows explicit preloading of the table. It is not necessary in a
+// single threaded context, but to safely call Cipher in a multi-threaded
+// context, this should be called prior to any forking.
+func LoadTbl() {
+	if !loaded {
+		loadTbl()
+	}
+}
 
 //loadTbl loads invTbl, pmTbl and loaded with their precomputed values
 func loadTbl() {
@@ -37,19 +46,22 @@ func loadTbl() {
 // powMod: from http://play.golang.org/p/bm7uZi0zCN
 // b,e : base, exponent
 // this has been tuned to this algorithm
-// and modified to run in constant time
-// to prevent timing attacks
 func powMod(b, e uint32) uint32 {
 	pm := uint32(1)
-	f, fi := uint32(1), uint32(1)
-	for i := 0; i < 8; i++ {
-		f = e & 1        //flag
-		fi = (f + 1) & 1 //flag inverse
-		pm = ((pm * (b*f + fi)) % p)
-		b = (b * b) % p
+	for e > 0 {
+		if e&1 != 0 {
+			pm = (pm * b) % p
+		}
 		e >>= 1
+		b = (b * b) % p
 	}
 	return pm
+}
+
+func xorShift(xs1, xs2, xs3, xs4 uint32) (uint32, uint32, uint32, uint32) {
+	t, xs1, xs2, xs3 := xs1^(xs1<<11), xs2, xs3, xs4
+	xs4 = xs4 ^ (xs4 >> 19) ^ t ^ (t >> 8)
+	return xs1, xs2, xs3, xs4
 }
 
 //pInv is only used to populate invTbl
@@ -75,40 +87,70 @@ func pInv(ua uint32) {
 	invTbl[x1-1] = byte(ua - 1)
 }
 
+// XorShift seeds. These guarentee no more than 4 overlapping rotation values
+// in the first 217K rotations for a key length of 10. That's enough for about
+// 50M, beyond that, the app is expected to break a resource into multiple
+// packets.
+var seed1 = uint32(2834208652)
+var seed2 = uint32(4772936)
+var seed3 = uint32(1700697559)
+var seed4 = uint32(439182572)
+
 // Cipher is the encrypt/decrypt function.
-// It cannot be called either an encryption or decryption function because
-// often the caller does not know what sort of action they are requesting,
-// and often one cipher text is being converted to another cipher text.
-func Cipher(message, key []byte, invert bool) []byte {
+// It cannot be called either an encryption or decryption function because often
+// the caller does not know what sort of action they are requesting, and often
+// one cipher text is being converted to another cipher text.
+//
+// k32 : A key is a byte slice, but for use they need to be converted to uint32
+//       and incremented by 1
+// kp  : key-product; product for a given position and key (with inversion)
+// cl  : cipher length; length of both input and output
+// kl  : byte length of key
+// xs1-4 : xorShift values to produce the rotation values
+//
+// Primative roots form a queue. The queue is one longer than necessary so that
+// in the inner loop we can progress the queue without overflowing.
+// root: queue of primative roots
+// ri  : next primative root index
+//
+// The most expensive part of the calculation is the modulus operation. But the
+// algorithm is working with numbers upto 257 in uint32 space, so it's not
+// necessary to perform mod each time. doMod accumulates how many
+// multiplications we've done and when it reaches 3 we need to do the mod op.
+func Cipher(input, key []byte, invert bool) []byte {
 	if !loaded {
 		loadTbl()
 	}
-	l := len(key)
-	k32 := make([]uint32, l)
-	rot, adj := uint32(0), uint32(0)
-	stp := make([]uint32, l)
-	root := make([]uint32, l+1)
-	r, ri, re := uint32(lpr), uint32(1), l
-	for i := 0; i < l; i++ {
-		root[i], r, ri = r, uint32(pmTbl[ri])+1, ri+2
-		k32[i] = uint32(key[i]) + 1
-		stp[i] = (2*rot*(uint32(i)+1) + 1)
+	//setup
+	xs1, xs2, xs3, xs4 := seed1, seed2, seed3, seed4
+	kl := len(key)
+	k32 := make([]uint32, kl)
+	root := make([]uint32, kl+1)
+	ri := uint32(1)
+	for i := 0; i < kl; i++ {
+		root[i], ri = uint32(pmTbl[ri])+1, ri+2
+		xs1, xs2, xs3, xs4 = xorShift(xs1, xs2, xs3, xs4)
+		k32[i] = ((uint32(key[i]) + 1) * ((xs4 & 255) + 1)) % s
 	}
-	root[re], r, ri = r, uint32(pmTbl[ri])+1, ri+2
+	root[kl], ri = uint32(pmTbl[ri])+1, ri+2
 
-	l = len(message)
-	c := make([]byte, l)
+	//main
+	cl := len(input)
+	output := make([]byte, cl)
 	j := 0
-	for i := 0; i < l; i++ {
+	for i := 0; i < cl; i++ {
+		// outer loop : iterates over each byte of the message
 		doMod := uint8(0)
 		kp := uint32(1)
 		for j = 0; j < len(key); j++ {
+			// inner loop : iterates over each byte of the key
 			kp *= uint32(pmTbl[(((root[j]-1)/2)*(257))+k32[j]]) + 1
 			doMod++
 			if doMod == 3 {
 				kp = kp % p
 				doMod = 0
 			}
+			// progress primative root thorugh root queue
 			root[j] = root[j+1]
 		}
 		if doMod != 0 {
@@ -123,53 +165,44 @@ func Cipher(message, key []byte, invert bool) []byte {
 			// branch to keep constant time
 			doMod = uint8(invTbl[kp-1]) - 1
 		}
-		root[re], r, ri = r, uint32(pmTbl[ri])+1, ri+2
+		// push next primative root on queue
+		root[kl], ri = uint32(pmTbl[ri])+1, ri+2
 		// do key rotation
 		if ri > p-2 {
-			r, ri = uint32(lpr), uint32(3)
-			rot += 1
-			if rot > 255 {
-				rot = 0
-				adj += 1
-				for j = 0; j < len(key)-1; j++ {
-					stp[j] = stp[j+1]
-				}
-				stp[j] = (2*adj*(uint32(j)+1) + 1)
-				for j = 0; j < len(key); j++ {
-					k32[j] = ((uint32(key[j]) + 1) * stp[j]) % s
-				}
-			} else {
-				for j = 0; j < len(key); j++ {
-					k32[j] = (k32[j] * stp[j]) % s
-				}
+			ri = uint32(1) //reset root index
+			for j = 0; j < kl-1; j++ {
+				xs1, xs2, xs3, xs4 = xorShift(xs1, xs2, xs3, xs4)
+				k32[j] = ((uint32(key[j]) + 1) * ((xs4 & 255) + 1)) % s
 			}
 		}
-		c[i] = byte((((uint32(message[i]) + 1) * kp) % p) - 1)
+		output[i] = byte((((uint32(input[i]) + 1) * kp) % p) - 1)
 	}
-	return c
+	return output
 }
 
 // Number of bytes in a single key
 var KeyLength = 10
 
-// Generates a set of keys. The size of the set is defined by keys.
-// The length of each key is defined by the package variable KeyLength.
+// Generates a set of keys. The size of the set is defined by keys. The length
+// of each key is defined by the package variable KeyLength.
 func GenerateKeyset(keys int) [][]byte {
-	keyset := make([][]byte, keys+1)
+	keyset := make([][]byte, keys)
 	compoundKey := make([]uint32, KeyLength)
-	for i := 0; i < keys; i++ {
+
+	for i := 0; i < keys-1; i++ {
 		keyset[i] = make([]byte, KeyLength)
 		_, err := rand.Read(keyset[i])
 		if err != nil {
 			panic(err)
 		}
 		for j := 0; j < KeyLength; j += 1 {
+			//Technical note, if keys > 16,777,216 compound key could overflow
 			compoundKey[j] += uint32(keyset[i][j]) + 1
 		}
 	}
-	keyset[keys] = make([]byte, KeyLength)
+	keyset[keys-1] = make([]byte, KeyLength)
 	for j := 0; j < KeyLength; j += 1 {
-		keyset[keys][j] += byte((compoundKey[j] % s) - 1)
+		keyset[keys-1][j] += byte((compoundKey[j] % s) - 1)
 	}
 	return keyset
 }
