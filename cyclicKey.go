@@ -88,13 +88,12 @@ func pInv(ua uint32) {
 }
 
 // XorShift seeds. These guarentee no more than 4 overlapping rotation values
-// in the first 217K rotations for a key length of 10. That's enough for about
-// 50M, beyond that, the app is expected to break a resource into multiple
-// packets.
-var seed1 = uint32(2834208652)
-var seed2 = uint32(4772936)
-var seed3 = uint32(1700697559)
-var seed4 = uint32(439182572)
+// in the first 278K rotations for a key length of 10. That's enough for about
+// 35M, beyond that, multiple key-sets should be used.
+var seed1 = uint32(2339296992)
+var seed2 = uint32(2884812447)
+var seed3 = uint32(2692626613)
+var seed4 = uint32(3191761099)
 
 // Cipher is the encrypt/decrypt function.
 // It cannot be called either an encryption or decryption function because often
