@@ -4,8 +4,15 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/rand"
+	"fmt"
 	"testing"
 )
+
+func TestPrintAll(t *testing.T) {
+	LoadTbl()
+	fmt.Println(invTbl)
+	fmt.Println(pmTbl)
+}
 
 func TestpowMod(t *testing.T) {
 	pm := powMod(111, 222)
