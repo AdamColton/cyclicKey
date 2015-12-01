@@ -4,23 +4,8 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/rand"
-	"fmt"
 	"testing"
 )
-
-func TestPrintAll(t *testing.T) {
-	LoadTbl()
-	fmt.Println(invTbl)
-	fmt.Println(pmTbl)
-}
-
-func TestpowMod(t *testing.T) {
-	pm := powMod(111, 222)
-	if pm != 120 {
-		t.Error(pm)
-		t.Error("powMod broken")
-	}
-}
 
 func TestKeyGeneration(t *testing.T) {
 	keys := GenerateKeyset(3)
@@ -41,19 +26,6 @@ func TestCycle(t *testing.T) {
 		t.Error(m[190:200])
 		t.Error(c[190:200])
 		t.Error("Did not cycle")
-	}
-}
-
-func TestInv(t *testing.T) {
-	pInv(111)
-	i := uint32(invTbl[111-1]) + 1
-	if (i*111)%p != 1 {
-		t.Error("pInv error 1, got: ", i, " expected: ", 111)
-	}
-	pInv(54)
-	i = uint32(invTbl[54-1]) + 1
-	if (i*54)%p != 1 {
-		t.Error("pInv error 2, got: ", i, " expected: ", 54)
 	}
 }
 
@@ -95,7 +67,6 @@ func TestRandomUntilRepeat(t *testing.T) {
 
 func BenchmarkCycle(b *testing.B) {
 	//b.SkipNow()
-	loadTbl()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		m := make([]byte, 100000)
@@ -106,17 +77,6 @@ func BenchmarkCycle(b *testing.B) {
 			c = Cipher(c, keys[i], false)
 		}
 		c = Cipher(c, keys[len(keys)-1], true)
-	}
-}
-
-func BenchmarkpowMod(b *testing.B) {
-	b.SkipNow()
-	bt := []byte{0, 0, 0, 0}
-	for n := 0; n < b.N; n++ {
-		rand.Read(bt)
-		x := (uint32(bt[0]) << 8) + uint32(bt[1])
-		y := (uint32(bt[2]) << 8) + uint32(bt[3])
-		powMod(x, y)
 	}
 }
 

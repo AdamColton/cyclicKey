@@ -17,73 +17,6 @@ const p = uint32(257)
 const lpr = uint32(3)
 const s = p - 1
 
-var invTbl [257]byte  // modulus inversion table
-var pmTbl [32896]byte // power modulus table
-var loaded = false
-
-// LoadTbl allows explicit preloading of the table. It is not necessary in a
-// single threaded context, but to safely call Cipher in a multi-threaded
-// context, this should be called prior to any forking.
-func LoadTbl() {
-	if !loaded {
-		loadTbl()
-	}
-}
-
-// loadTbl loads invTbl and pmTbl with their precomputed values and sets loaded
-// to true
-func loadTbl() {
-	for i := uint32(1); i < p; i++ {
-		pInv(i)
-	}
-	pmTbl[1] = byte(2)
-	for ri := uint32(1); ri < 257; ri += 2 {
-		r := uint32(pmTbl[ri]) + 1 // these all get set in the first loop, except pmTbl[1]
-		for e := uint32(0); e < 257; e++ {
-			pmTbl[(((ri-1)/2)*(257))+e] = byte(powMod(r, e) - 1)
-		}
-	}
-	loaded = true
-}
-
-// powMod: from http://play.golang.org/p/bm7uZi0zCN
-// b,e : base, exponent
-// this has been tuned to this algorithm
-func powMod(b, e uint32) uint32 {
-	pm := uint32(1)
-	for e > 0 {
-		if e&1 != 0 {
-			pm = (pm * b) % p
-		}
-		e >>= 1
-		b = (b * b) % p
-	}
-	return pm
-}
-
-//pInv is only used to populate invTbl
-//it calculates the inverse of ua with respect to p
-func pInv(ua uint32) {
-	if invTbl[ua-1] > 0 {
-		return
-	}
-	a := int64(ua)
-	b := int64(p)
-	var q, x0, x1 int64
-	b0 := b
-	x0, x1 = 0, 1
-	for a > 1 {
-		q = a / b
-		b, a = a%b, b
-		x0, x1 = x1-q*x0, x0
-	}
-	if x1 < 0 {
-		x1 += b0
-	}
-	invTbl[ua-1] = byte(x1 - 1)
-	invTbl[x1-1] = byte(ua - 1)
-}
-
 // XorShift seeds. These guarentee no more than 4 overlapping rotation values
 // in the first 278K rotations for a key length of 10. That's enough for about
 // 35MB of data, beyond that, multiple key-sets should be used.
@@ -124,9 +57,6 @@ func xorShift(xs1, xs2, xs3, xs4 uint32) (uint32, uint32, uint32, uint32) {
 // necessary to perform mod each time. doMod accumulates how many
 // multiplications we've done and when it reaches 3 we need to do the mod op.
 func Cipher(input, key []byte, invert bool) []byte {
-	if !loaded {
-		loadTbl()
-	}
 	//setup
 	xs1, xs2, xs3, xs4 := seed1, seed2, seed3, seed4
 	kl := len(key)
