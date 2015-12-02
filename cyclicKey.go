@@ -64,11 +64,11 @@ func Cipher(input, key []byte, invert bool) []byte {
 	root := make([]uint32, kl+1)
 	ri := uint32(1)
 	for i := 0; i < kl; i++ {
-		root[i], ri = uint32(pmTbl[ri])+1, ri+2
+		root[i], ri = ((pmTbl[ri]-1)/2)*257, ri+2
 		xs1, xs2, xs3, xs4 = xorShift(xs1, xs2, xs3, xs4)
 		k32[i] = ((uint32(key[i]) + 1) * ((xs4 & 255) + 1)) % s
 	}
-	root[kl], ri = uint32(pmTbl[ri])+1, ri+2
+	root[kl], ri = ((pmTbl[ri]-1)/2)*257, ri+2
 
 	//main
 	cl := len(input)
@@ -79,12 +79,14 @@ func Cipher(input, key []byte, invert bool) []byte {
 		doMod := uint8(0)
 		kp := uint32(1)
 		for j = 0; j < len(key); j++ {
+			// kp = f(kp 0:256, root 0:127, key 1:256)
 			// inner loop : iterates over each byte of the key
-			kp *= uint32(pmTbl[(((root[j]-1)/2)*(257))+k32[j]]) + 1
-			doMod++
-			if doMod == 3 {
+			kp *= pmTbl[root[j]+k32[j]]
+			if doMod == 2 {
 				kp = kp % p
 				doMod = 0
+			} else {
+				doMod++
 			}
 			// progress primative root thorugh root queue
 			root[j] = root[j+1]
@@ -102,7 +104,7 @@ func Cipher(input, key []byte, invert bool) []byte {
 			doMod = uint8(invTbl[kp-1]) - 1
 		}
 		// push next primative root on queue
-		root[kl], ri = uint32(pmTbl[ri])+1, ri+2
+		root[kl], ri = ((pmTbl[ri]-1)/2)*257, ri+2
 		// do key rotation
 		if ri > p-2 {
 			ri = uint32(1) //reset root index

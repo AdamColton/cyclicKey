@@ -23,9 +23,11 @@ func TestCycle(t *testing.T) {
 		c = Cipher(c, keys[i], i == len(keys)-1)
 	}
 	if !bytes.Equal(m, c) {
-		t.Error(m[190:200])
-		t.Error(c[190:200])
+		t.Error(m[180:200])
+		t.Error(c[180:200])
 		t.Error("Did not cycle")
+		t.Error(m[0:20])
+		t.Error(c[0:20])
 	}
 }
 
@@ -85,11 +87,11 @@ func BenchmarkCycle(b *testing.B) {
 func BenchmarkRand(b *testing.B) {
 	b.SkipNow()
 	bt := []byte{0, 0, 0, 0}
-	var x uint32
+	var x uint16
 	for n := 0; n < b.N; n++ {
 		rand.Read(bt)
-		x = (uint32(bt[0]) << 8) + uint32(bt[1])
-		x = (uint32(bt[2]) << 8) + uint32(bt[3])
+		x = (uint16(bt[0]) << 8) + uint16(bt[1])
+		x = (uint16(bt[2]) << 8) + uint16(bt[3])
 	}
 	if false {
 		b.Log(x) //or it complains about unused x

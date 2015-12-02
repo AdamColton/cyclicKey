@@ -87,9 +87,9 @@ The final details is the key rotation. In the above code, if x+y > 255, kp will 
 The key rotation can be a weakness. If too many rotation values overlap, the cipher becomes weak against chosen-plain-text-attack (and possibly others). I have tried a few different rotation schemes to mitigate this. The best option I have come up with so far has been to use xorShift to generate the rotations. XorShift is not a cryptographically strong pseudo-random generator, but it does not need to be. It was chosen because it is fast and light to implement. The current seeds do not have more than 4 overlapping values in the first 278K sets of 10. This is suitable for about 32M of data. I am currently searching for better seeds.
 
 ### Performance
-The algorithm runs in O(n) time, n being message length.
+For a fixed key length, the algorithm runs in O(n) time, n being message length.
 
-Running the benchmarks on an Ubuntu server, the cyclic key cipher performed 4x slower than AES. I consider this to be more than acceptable. The AES implementation in Go has been highly optimized. This version of the cyclic key cipher has only undergone a limited amount of optimization. Most of which has been achieved with lookup tables. With Go's bounds checking, this will incur notable overhead. I would like to try moving this into cgo to see what the performance gain is. However, even at this speed, the cyclic key cipher performs an operation that cannot be done with AES (at least not to my knowledge) and the performance loss is there for acceptable if that operation is necessary.
+Running the benchmarks on an Ubuntu server, the cyclic key cipher performed 4x slower than AES. I consider this to be more than acceptable. The AES implementation in Go has been highly optimized. This version has gone through several rounds of optimization, the most effective have been moving some of the computionat to tables. With Go's bounds checking, this will incur notable overhead. I would like to try moving this into cgo to see what the performance gain is. However, even at this speed, the cyclic key cipher performs an operation that cannot be done with AES (at least not to my knowledge) and the performance loss is there for acceptable if that operation is necessary.
 
 ### Table Optmimzations
 
@@ -97,4 +97,7 @@ Running the benchmarks on an Ubuntu server, the cyclic key cipher performed 4x s
 The modulus inversion table (invTbl) is straightforward. We find the modular inversion of every number from 1 to 256 with respect to the prime 257. Because this skips 0, to efficiently fill the array, every value is decremented by 1. Because inversions come in pairs, we populate both values.
 
 #### Power Mod Table
-The power mode table (pmTbl) is more complex. The powerMod function takes 2 arguments, b (base) and e (exponent) and returns (b**e) % p. For the algorithm, b will always be an odd number between 1 and 255 (inclusive). The exponent (e) can be any number from 0 to 256. To compress this range down and fill the array, powMod(b,e) = pmTbl[ (((b-1)/2)*257)+e ] + 1.
+The power mode table (pmTbl) is more complex. The powerMod function takes 2 arguments, b (base) and e (exponent) and returns (b**e) % p. For the algorithm, b will always be an odd number between 1 and 255 (inclusive). The exponent (e) can be any number from 0 to 256. To compress this range down and fill the array, powMod(b,e) = pmTbl[ (((b-1)/2)*257)+e ] + 1. Often the base is what ever primative root is being used, so to simplify the table lookup, we store the roots in the form (root-1)/2)*257.
+
+### Possible Improvments
+It may be possible to get significant improvements by consolidating all table informaion and using unsafe pointer arithmetic.
